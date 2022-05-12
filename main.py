@@ -4,9 +4,6 @@ import time
 import random
 import sys
 
-WHITELIST=./.allowlist
-BLACKLIST=./blocklist
-
 def usage():
     print("Usage: " + sys.argv[0] + " <arg1> <arg2> <arg3>")
 
