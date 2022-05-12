@@ -1,0 +1,6 @@
+#!/usr/bin/env python3
+
+WHITELIST=./.allowlist
+BLACKLIST=./blocklist
+
+

@@ -1,0 +1,43 @@
+# Defining some defaults...
+127.0.0.1 localhost
+127.0.0.1 BrownTurbo-Linux
+127.0.0.1 localhost.localdomain
+127.0.0.1 local
+127.0.0.1 brownturbo.local
+255.255.255.255 broadcasthost
+::1 localhost
+::1 ip6-localhost
+::1 ip6-loopback
+fe80::1%lo0 localhost
+fe00::0 ip6-localnet
+ff00::0 ip6-mcastprefix
+ff02::1 ip6-allnodes
+ff02::2 ip6-allrouters
+ff02::3 ip6-allhosts
+0.0.0.0 0.0.0.0
+# End of Definitions
+
+############
+192.168.1.1 Router.Gateway.Primary
+192.168.2.1 Router.Gateway.Secondary
+############
+192.168.1.2 BrownTurbo.Laptop.LAN
+192.168.1.3 BrownTurbo.Laptop.Wireless
+192.168.1.4 BrownTurbo.Phone
+192.168.1.5 BrownTurbo.RPI.LAN
+192.168.1.6 BrownTurbo.RPI.Wireless
+192.168.1.7 Koky.Phone
+192.168.1.8 Jaky.Phone
+############
+
+# some kind of Silly fallback domains....
+#0.0.0.0 nmcheck.gnome.org
+#0.0.0.0 connectivitycheck.gstatic.com
+#0.0.0.0 connectivity-check.ubuntu.com
+
+# Added by Docker Desktop
+#192.168.1.2 host.docker.internal
+#192.168.1.2 gateway.docker.internal
+# To allow the same kube context to work on the host and the container:
+#127.0.0.1 kubernetes.docker.internal
+# End of section
