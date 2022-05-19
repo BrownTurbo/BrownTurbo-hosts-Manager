@@ -3,54 +3,57 @@
 try:
     import time
 except ImportError:
-    raise ImportError("''time' library is a requirement.")
+    raise ImportError("built-in 'time' library is a requirement.")
 
 try:
     import datetime
 except ImportError:
-    raise ImportError("''datetime' library is a requirement.")
+    raise ImportError("built-in 'datetime' library is a requirement.")
 
 try:
     import random
 except ImportError:
-    raise ImportError("''random' library is a requirement.")
+    raise ImportError("built-in 'random' library is a requirement.")
 
 try:
     import sys
 except ImportError:
-    raise ImportError("'sys' library is a requirement.")
+    raise ImportError("built-in 'sys' library is a requirement.")
 
 try:
     import os
 except ImportError:
-    raise ImportError("''os' library is a requirement.")
+    raise ImportError("built-in 'os' library is a requirement.")
 
 try:
     import requests
 except ImportError:
-    raise ImportError("''requests' library is a requirement.")
+    raise ImportError("built-in 'requests' library is a requirement.")
 
 try:
     import pathlib
 except ImportError:
-    raise ImportError("''pathlib' library is a requirement.")
+    raise ImportError("built-in 'pathlib' library is a requirement.")
 
 try:
     import hashlib
 except ImportError:
-    raise ImportError("''hashlib' library is a requirement.")
+    raise ImportError("built-in 'hashlib' library is a requirement.")
 
 try: 
     import urllib
 except ImportError:
-    raise ImportError("''urllib' library is a requirement.")
+    raise ImportError("built-in 'urllib' library is a requirement.")
 
 try:
     import subprocess
 except ImportError:
-    raise ImportError("''subprocess' library is a requirement.")
+    raise ImportError("built-in 'subprocess' library is a requirement.")
 
-import helpers/cooldown
+try:
+    import platform
+except ImportError:
+    raise ImportError("built-in 'platform' library is a requirement.")
 
 # Detecting Python 3 for version-dependent implementations
 if sys.version_info.major < 3:
@@ -59,7 +62,7 @@ if sys.version_info.major < 3:
 cooldown()
 
 # Checking whether it isn't Linux...
-if platform.system() != 'Linux':
+if platform.uname().system != 'Linux':
    raise Exception("either your OS nor Kernel is unsupported...")
 
 # Checking for sudo's' existance....
