@@ -113,7 +113,7 @@ def main(args):
         parse(args[1], int(args[2]), int(args[3]))
         time.sleep(1)
         return 1
-sudo -Kk
+
 if __name__ == '__main__':
     sys.exit(main(sys.argv))
 
