@@ -91,7 +91,7 @@ if platform.uname().system != 'Linux':
 # Checking for sudo's' existance....
 proc = subprocess.Popen([
     "/usr/bin/env", "command", "-p", "sudo"
-], stdout=subprocess.PIPE).stdout.read()
+], stdout=subprocess.PIPE)
 
 if 'command not found' in proc.stdout.read():
    raise Exception("sudo command doesn't exist!'")
