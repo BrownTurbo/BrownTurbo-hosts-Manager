@@ -89,12 +89,13 @@ if platform.uname().system != 'Linux':
    raise Exception("either your OS nor Kernel is unsupported...")
 
 # Checking for sudo's' existance....
-proc = subprocess.Popen([
-    "/usr/bin/env", "bash", "-c", "command", "-p", "sudo"
-], stdout=subprocess.PIPE)
-
-if 'command not found' in proc.stdout.read():
-   raise Exception("sudo command doesn't exist!'")
+try:
+    proc = subprocess.Popen("/usr/bin/env bash -c command -p sudo", shell=True, stdout=subprocess.PIPE)
+except subprocess.CalledProcessError as err:
+    raise Exception( 'ERROR:', err)
+else:
+    if 'command not found' in proc.stdout.read().decode('utf-8'):
+       raise Exception("sudo command doesn't exist!'")
 
 ###
 BASEDIR_PATH = os.path.dirname(os.path.realpath(__file__))
