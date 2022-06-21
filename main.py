@@ -25,62 +25,62 @@
 
 try:
     import time
-except ImportError as e:
+except Exception as e:
     raise ImportError("built-in 'time' library is a requirement.\r\n{}" .format(e))
 
 try:
     import datetime
-except ImportError as e:
+except Exception as e:
     raise ImportError("built-in 'datetime' library is a requirement.\r\n{}" .format(e))
 
 try:
     import random
-except ImportError as e:
+except Exception as e:
     raise ImportError("built-in 'random' library is a requirement.\r\n{}" .format(e))
 
 try:
     import sys
-except ImportError as e:
+except Exception as e:
     raise ImportError("built-in 'sys' library is a requirement.\r\n{}" .format(e))
 
 try:
     import os
-except ImportError as e:
+except Exception as e:
     raise ImportError("built-in 'os' library is a requirement.\r\n{}" .format(e))
 
 try:
     import requests
-except ImportError as e:
+except Exception as e:
     raise ImportError("built-in 'requests' library is a requirement.\r\n{}" .format(e))
 
 try:
     import pathlib
-except ImportError as e:
+except Exception as e:
     raise ImportError("built-in 'pathlib' library is a requirement.\r\n{}" .format(e))
 
 try:
     import hashlib
-except ImportError as e:
+except Exception as e:
     raise ImportError("built-in 'hashlib' library is a requirement.\r\n{}" .format(e))
 
 try:
     import urllib
-except ImportError as e:
+except Exception as e:
     raise ImportError("built-in 'urllib' library is a requirement.\r\n{}" .format(e))
 
 try:
     import subprocess
-except ImportError as e:
+except Exception as e:
     raise ImportError("built-in 'subprocess' library is a requirement.\r\n{}" .format(e))
 
 try:
     import platform
-except ImportError as e:
+except Exception as e:
     raise ImportError("built-in 'platform' library is a requirement.\r\n{}" .format(e))
 
 # Detecting Python 3 for version-dependent implementations
 if sys.version_info.major < 3:
-    raise Exception("Python's major versions earlier than 3 is not supported!")
+    raise Exception("Python's major versions earlier than 3 are not supported!")
 
 #cooldown()
 
@@ -111,8 +111,8 @@ TMP_PATH = os.path.expanduser('~' + os.sep + '.tmp')
 
 def main():
     # Whitelist
-    AllowedEntries = None
     TargetStatus = None
+    AllowedEntries = None
     time.sleep(0.5)
     try:
         AllowedF = open(BASEDIR_PATH +  os.sep + '.allowlist', 'r')
@@ -152,6 +152,11 @@ def main():
     
     return TargetStatus
 
-if __name__ == '__main__':
-    sys.exit(main())
+try:
+    if __name__ == '__main__':
+        sys.exit(main())
+except KeyboardInterrupt:
+    print('Exiting...')
+except Exception as e:
+    print("Sorry, something went wrong\r\n" + e)
 
