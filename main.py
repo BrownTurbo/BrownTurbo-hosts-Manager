@@ -20,63 +20,63 @@
 #  Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston,
 #  MA 02110-1301, USA.
 #
-# Last Edit: 2022/05/20 13:51:37
+# Last Edit: 2022/6/21 09:44:27
 #
 
 try:
     import time
-except ImportError:
-    raise ImportError("built-in 'time' library is a requirement.")
+except ImportError as e:
+    raise ImportError("built-in 'time' library is a requirement.\r\n{}" .format(e))
 
 try:
     import datetime
-except ImportError:
-    raise ImportError("built-in 'datetime' library is a requirement.")
+except ImportError as e:
+    raise ImportError("built-in 'datetime' library is a requirement.\r\n{}" .format(e))
 
 try:
     import random
-except ImportError:
-    raise ImportError("built-in 'random' library is a requirement.")
+except ImportError as e:
+    raise ImportError("built-in 'random' library is a requirement.\r\n{}" .format(e))
 
 try:
     import sys
-except ImportError:
-    raise ImportError("built-in 'sys' library is a requirement.")
+except ImportError as e:
+    raise ImportError("built-in 'sys' library is a requirement.\r\n{}" .format(e))
 
 try:
     import os
-except ImportError:
-    raise ImportError("built-in 'os' library is a requirement.")
+except ImportError as e:
+    raise ImportError("built-in 'os' library is a requirement.\r\n{}" .format(e))
 
 try:
     import requests
-except ImportError:
-    raise ImportError("built-in 'requests' library is a requirement.")
+except ImportError as e:
+    raise ImportError("built-in 'requests' library is a requirement.\r\n{}" .format(e))
 
 try:
     import pathlib
-except ImportError:
-    raise ImportError("built-in 'pathlib' library is a requirement.")
+except ImportError as e:
+    raise ImportError("built-in 'pathlib' library is a requirement.\r\n{}" .format(e))
 
 try:
     import hashlib
-except ImportError:
-    raise ImportError("built-in 'hashlib' library is a requirement.")
+except ImportError as e:
+    raise ImportError("built-in 'hashlib' library is a requirement.\r\n{}" .format(e))
 
 try:
     import urllib
-except ImportError:
-    raise ImportError("built-in 'urllib' library is a requirement.")
+except ImportError as e:
+    raise ImportError("built-in 'urllib' library is a requirement.\r\n{}" .format(e))
 
 try:
     import subprocess
-except ImportError:
-    raise ImportError("built-in 'subprocess' library is a requirement.")
+except ImportError as e:
+    raise ImportError("built-in 'subprocess' library is a requirement.\r\n{}" .format(e))
 
 try:
     import platform
-except ImportError:
-    raise ImportError("built-in 'platform' library is a requirement.")
+except ImportError as e:
+    raise ImportError("built-in 'platform' library is a requirement.\r\n{}" .format(e))
 
 # Detecting Python 3 for version-dependent implementations
 if sys.version_info.major < 3:
@@ -84,37 +84,74 @@ if sys.version_info.major < 3:
 
 #cooldown()
 
+def ___Exception(msg):
+    print('Exception: {}' .format(msg))
+    sys.exit(0)
+
 # Checking whether it isn't Linux...
 if platform.uname().system != 'Linux':
-   raise Exception("either your OS nor Kernel is unsupported...")
+   ___Exception("either your OS nor Kernel is unsupported...")
 
 # Checking for sudo's' existance....
 try:
-    proc = subprocess.Popen("/usr/bin/env bash -c command -p sudo", shell=True, stdout=subprocess.PIPE)
+    proc = subprocess.Popen("/usr/bin/env bash -c 'command -p sudo'", shell=True, stdout=subprocess.PIPE)
 except subprocess.CalledProcessError as err:
-    raise Exception( 'ERROR:', err)
+    ___Exception( 'ERROR:', err)
 else:
     if 'command not found' in proc.stdout.read().decode('utf-8'):
-       raise Exception("sudo command doesn't exist!'")
+         ___Exception("sudo command doesn't exist!'")
+
+if not os.geteuid() == 0:
+    ___Exception("root privileges is a requirement to run this script...")
 
 ###
 BASEDIR_PATH = os.path.dirname(os.path.realpath(__file__))
 CACHE_PATH = os.path.expanduser('~' + os.sep +'.cache')
 TMP_PATH = os.path.expanduser('~' + os.sep + '.tmp')
 
-def usage():
-    print("Usage: " + sys.argv[0] + " <arg1> <arg2> <arg3>")
-
-def main(args):
-    print(len(args))
-    if len(args) != 4:
-        usage()
-        return 0
+def main():
+    # Whitelist
+    AllowedEntries = None
+    TargetStatus = None
+    time.sleep(0.5)
+    try:
+        AllowedF = open(BASEDIR_PATH +  os.sep + '.allowlist', 'r')
+    except FileNotFoundError:
+        print("Sorry!")
+        TargetStatus = 0
+    except Exception as e:
+        print("Sorry, something went wrong\r\n" + e)
+        TargetStatus = 0
     else:
-        parse(args[1], int(args[2]), int(args[3]))
-        time.sleep(1)
-        return 1
+        AllowedEntries = AllowedF.readline()
+        if not AllowedF.closed:
+            AllowedF.close()
+        TargetStatus = 1
+
+    # Blacklist
+    BlockedEntries = None
+    time.sleep(0.5)
+    try:
+        BlockedF = open(BASEDIR_PATH +  os.sep + '.blocklist', 'r')
+    except FileNotFoundError:
+        print("Sorry!")
+        TargetStatus = 0
+    except Exception as e:
+        print("Sorry, something went wrong\r\n" + e)
+        TargetStatus = 0
+    else:
+        BlockedEntries = BlockedF.readline()
+        if not BlockedF.closed:
+            BlockedF.close()
+        TargetStatus = 1
+    
+    # Blocksets
+    for root, dirnames, filenames in os.walk(BASEDIR_PATH +  os.sep + 'blocksets'):
+        for filename in filenames:
+            print(filename)
+    
+    return TargetStatus
 
 if __name__ == '__main__':
-    sys.exit(main(sys.argv))
+    sys.exit(main())
 
