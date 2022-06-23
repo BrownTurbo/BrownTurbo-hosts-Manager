@@ -101,8 +101,8 @@ else:
     if 'command not found' in proc.stdout.read().decode('utf-8'):
          ___Exception("sudo command doesn't exist!'")
 
-if not os.geteuid() == 0:
-    ___Exception("root privileges is a requirement to run this script...")
+#if not os.geteuid() == 0:
+#    ___Exception("root privileges is a requirement to run this script...")
 
 ###
 BASEDIR_PATH = os.path.dirname(os.path.realpath(__file__))
@@ -113,6 +113,7 @@ def main():
     # Whitelist
     TargetStatus = None
     AllowedEntries = None
+    CollectedEntries = None
     time.sleep(0.5)
     try:
         AllowedF = open(BASEDIR_PATH +  os.sep + '.allowlist', 'r')
@@ -146,10 +147,21 @@ def main():
         TargetStatus = 1
     
     # Blocksets
+    time.sleep(0.5)
     for root, dirnames, filenames in os.walk(BASEDIR_PATH +  os.sep + 'blocksets'):
         for filename in filenames:
             print(filename)
-    
+            try:
+                 BlockedF = open(BASEDIR_PATH +  os.sep + 'blocksets'+  os.sep + filename, 'r')
+            except Exception as e:
+                 print("Sorry, something went wrong\r\n" + e)
+                 TargetStatus = 0
+            else:
+                 BlockedEntries = BlockedF.readline()
+                 if not BlockedF.closed:
+                     BlockedF.close()
+                 TargetStatus = 1
+
     return TargetStatus
 
 try:
