@@ -26,57 +26,57 @@
 try:
     import time
 except Exception as e:
-    raise ImportError("built-in 'time' library is a requirement.\r\n{}" .format(e))
+    raise ImportError("'time' library is a requirement.\r\n{}" .format(e))
 
 try:
     import datetime
 except Exception as e:
-    raise ImportError("built-in 'datetime' library is a requirement.\r\n{}" .format(e))
+    raise ImportError("'datetime' library is a requirement.\r\n{}" .format(e))
 
 try:
     import random
 except Exception as e:
-    raise ImportError("built-in 'random' library is a requirement.\r\n{}" .format(e))
+    raise ImportError("'random' library is a requirement.\r\n{}" .format(e))
 
 try:
     import sys
 except Exception as e:
-    raise ImportError("built-in 'sys' library is a requirement.\r\n{}" .format(e))
+    raise ImportError("'sys' library is a requirement.\r\n{}" .format(e))
 
 try:
     import os
 except Exception as e:
-    raise ImportError("built-in 'os' library is a requirement.\r\n{}" .format(e))
+    raise ImportError("'os' library is a requirement.\r\n{}" .format(e))
 
 try:
     import requests
 except Exception as e:
-    raise ImportError("built-in 'requests' library is a requirement.\r\n{}" .format(e))
+    raise ImportError("'requests' library is a requirement.\r\n{}" .format(e))
 
 try:
     import pathlib
 except Exception as e:
-    raise ImportError("built-in 'pathlib' library is a requirement.\r\n{}" .format(e))
+    raise ImportError("'pathlib' library is a requirement.\r\n{}" .format(e))
 
 try:
     import hashlib
 except Exception as e:
-    raise ImportError("built-in 'hashlib' library is a requirement.\r\n{}" .format(e))
+    raise ImportError("'hashlib' library is a requirement.\r\n{}" .format(e))
 
 try:
     import urllib
 except Exception as e:
-    raise ImportError("built-in 'urllib' library is a requirement.\r\n{}" .format(e))
+    raise ImportError("'urllib' library is a requirement.\r\n{}" .format(e))
 
 try:
     import subprocess
 except Exception as e:
-    raise ImportError("built-in 'subprocess' library is a requirement.\r\n{}" .format(e))
+    raise ImportError("'subprocess' library is a requirement.\r\n{}" .format(e))
 
 try:
     import platform
 except Exception as e:
-    raise ImportError("built-in 'platform' library is a requirement.\r\n{}" .format(e))
+    raise ImportError("'platform' library is a requirement.\r\n{}" .format(e))
 
 # Detecting Python 3 for version-dependent implementations
 if sys.version_info.major < 3:
@@ -109,14 +109,14 @@ BASEDIR_PATH = os.path.dirname(os.path.realpath(__file__))
 CACHE_PATH = os.path.expanduser('~' + os.sep +'.cache')
 TMP_PATH = os.path.expanduser('~' + os.sep + '.tmp')
 
-def main():
+def main(args):
     # Whitelist
     TargetStatus = None
     AllowedEntries = None
     CollectedEntries = None
     time.sleep(0.5)
     try:
-        AllowedF = open(BASEDIR_PATH +  os.sep + '.allowlist', 'r')
+        AllowedF = open(BASEDIR_PATH + os.sep + '.allowlist', 'r')
     except FileNotFoundError:
         print("Sorry!")
         TargetStatus = 0
@@ -133,7 +133,7 @@ def main():
     BlockedEntries = None
     time.sleep(0.5)
     try:
-        BlockedF = open(BASEDIR_PATH +  os.sep + '.blocklist', 'r')
+        BlockedF = open(BASEDIR_PATH + os.sep + '.blocklist', 'r')
     except FileNotFoundError:
         print("Sorry!")
         TargetStatus = 0
@@ -145,14 +145,14 @@ def main():
         if not BlockedF.closed:
             BlockedF.close()
         TargetStatus = 1
-    
+
     # Blocksets
     time.sleep(0.5)
     for root, dirnames, filenames in os.walk(BASEDIR_PATH +  os.sep + 'blocksets'):
         for filename in filenames:
             print(filename)
             try:
-                 BlockedF = open(BASEDIR_PATH +  os.sep + 'blocksets'+  os.sep + filename, 'r')
+                 BlockedF = open(BASEDIR_PATH + os.sep + 'blocksets'+ os.sep + filename, 'r')
             except Exception as e:
                  print("Sorry, something went wrong\r\n" + e)
                  TargetStatus = 0
@@ -166,7 +166,7 @@ def main():
 
 try:
     if __name__ == '__main__':
-        sys.exit(main())
+        sys.exit(main(sys.argv))
 except KeyboardInterrupt:
     print('Exiting...')
 except Exception as e:
