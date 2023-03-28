@@ -315,18 +315,53 @@ cache-02.torproject.org cache.torproject.org
 
 # MTA:SA
 #IPv4/A Records corrections
-#Old A Record: 91.121.44.90
-172.67.165.115 172.67.165.115
+91.121.44.90 91.121.44.90
+188.114.97.6 188.114.97.6
+188.114.96.6 188.114.96.6
+104.26.8.84 104.26.8.84
+104.26.9.84 104.26.9.84
+172.67.73.64 172.67.73.64
 164.132.122.203 164.132.122.203
-162.159.137.85 162.159.137.85
-104.21.57.184 104.21.57.184 
 
 # Site's DNS corrections
-164.132.122.203 mtasa.com
-162.159.137.85 forum.mtasa.com
-162.159.137.85 wiki.mtasa.com
-164.132.122.203 mirror.mtasa.com
-164.132.122.203 multitheftauto.com
-104.21.57.184 forum.multitheftauto.com #172.67.165.115
-104.21.57.184 wiki.multitheftauto.com #172.67.165.115
-164.132.122.203 mirror.multitheftauto.com
+188.114.96.6 www.mtasa.com mtasa.com
+188.114.96.6 forum.mtasa.com
+188.114.96.6 wiki.mtasa.com
+188.114.96.6 mirror.mtasa.com
+164.132.122.203 luac.mtasa.com
+164.132.122.203 luac.multitheftauto.com
+164.132.122.203 _s1.mtasa.com
+164.132.122.203 _s1.multitheftauto.com
+104.26.9.84 www.multitheftauto.com multitheftauto.com
+104.26.9.84 forum.multitheftauto.com
+104.26.9.84 wiki.multitheftauto.com
+104.26.9.84 mirror.multitheftauto.com
+188.114.96.6 linux.mtasa.com
+104.26.9.84 linux.multitheftauto.com
+104.26.9.84 nightly.multitheftauto.com
+188.114.96.6 nightly.mtasa.com
+188.114.96.6 community.mtasa.com
+104.26.9.84 community.multitheftauto.com
+
+####
+# 172.67.160.206, 104.21.14.244
+172.67.160.206 www.open.mp open.mp
+# 188.114.97.6 188.114.96.6
+188.114.96.6 forum.open.mp
+# 104.21.33.168, 172.67.165.9
+104.21.33.168 www.burgershot.gg burgershot.gg
+# 185.178.208.180
+185.178.208.180 www.blast.hk blast.hk
+185.178.208.180 sampwiki.blast.hk
+# 195.2.80.80
+195.2.80.80 sampforum.blast.hk
+# 162.159.152.4 162.159.153.4
+162.159.152.4 www.medium.com medium.com
+# 185.61.153.110
+185.61.153.110 www.mirror-medium.com mirror-medium.com
+# 172.67.70.200 104.26.15.183 104.26.14.183
+172.67.70.200 shahed4u.network www.shahed4u.network
+# 172.67.75.162 104.26.0.182 104.26.1.182
+172.67.75.162 shahed4u.media www.shahed4u.media
+# 104.26.14.6 172.67.71.80 104.26.15.6
+104.26.14.6 shahed4u.vip www.shahed4u.vip
