@@ -79,7 +79,7 @@ def getLocalIFNames():
 class HostsParser:
     def __init__(self, file_path):
         self.file_path = file_path
-        self.entries = {}
+        self.entries = []
         self.whitelist = []
         self.blocklist = []
         self.settings = {}
@@ -105,16 +105,19 @@ class HostsParser:
         self._parse_allowlist()
         try:
             with open(self.file_path, 'r') as file:
-                for line in file:
+                for line_number, line in enumerate(file, 1):
                     stripped_line = line.strip()
                     if not stripped_line:
+                        # Blank line, store as-is
+                        self.entries.append(('blank', None, None, line_number, line))
                         continue
                     if stripped_line.startswith('#'):
                         if not re.match(r"#\s*(\d{1,3}(?:\.\d{1,3}){3})\s+([\w.-]+)", line):
-                            continue
-                        self._parse_disabled_line(stripped_line)
+                            self.entries.append(('comment', None, None, line_number, line))
+                        else:
+                            self._parse_disabled_line(stripped_line, line_number)
                     else:
-                        self._parse_active_line(stripped_line)
+                        self._parse_active_line(stripped_line, line_number)
         except (FileNotFoundError, PermissionError, IOError) as e:
             sys.stderr.write(f"Failed to handle file {file_path} : {e}")
             if exitOnERR:
@@ -125,18 +128,25 @@ class HostsParser:
     def search_domain(self, domain):
         """Search for a domain in the entries."""
         found_entries = {}
-        for ip, entry in self.entries.items():
-            if domain in entry['active'] or domain in entry['disabled']:
-                found_entries[ip] = entry
+        for i, (line_number, eType, ip, domains, comment) in enumerate(self.entries):
+            if not eType in ['active', 'disabled']:
+                continue
+            if domain in domains:
+                found_entries[ip] = {
+                    'domains': domains,
+                    'status': eType,
+                    'line_number': line_number,
+                    'entry': i
+                }
         return found_entries
 
-    def delete_entry(self, domain):
+    def delete_entry(self, eID, domain):
         """Delete a domain entry from the hosts file."""
-        for ip, entry in self.entries.items():
-            if domain in entry['active']:
-                entry['active'].remove(domain)
-            if domain in entry['disabled']:
-                entry['disabled'].remove(domain)
+        for i, (line_number, eType, ip, domains, comment) in enumerate(self.entries):
+            if not eType in ['active', 'disabled'] or not eID == i:
+                continue
+            if domain in domains:
+                domains.remove(domain)
 
     def move_between_blocksets(self, domain, from_blockset, to_blockset):
         """Move an entry between blocksets, e.g., from allowlist to blocklist."""
@@ -190,17 +200,17 @@ class HostsParser:
                 if breakOnERR:
                     return
 
-    def _parse_disabled_line(self, line):
+    def _parse_disabled_line(self, line, line_number=None):
         """Parse and store disabled domains."""
         line_content = line.lstrip('#').strip()
         if line_content:
-            self._add_entry(line_content, active=False)
+            self._add_entry(line_content, False, line_number)
 
-    def _parse_active_line(self, line):
+    def _parse_active_line(self, line, line_number=None):
         """Parse and store active domains."""
-        self._add_entry(line, active=True)
+        self._add_entry(line, True, line_number)
 
-    def _add_entry(self, line, active=True):
+    def _add_entry(self, line, active=True, line_number=None):
         parts = line.split()
         if len(parts) < 2:
             return
@@ -211,10 +221,7 @@ class HostsParser:
         for domain in domains:
             if not self._validate_syntax(ip_address, domain):
                 sys.stderr.write(f"Syntax validation failed for {domain} and IP {ip_address}\n")
-                if exitOnERR:
-                    sys.exit()
-                #if breakOnERR:
-                #    return
+                self.entries.append(('ignored', None, None, line_number, line))
                 return
             if not self._validate_domain_ip(ip_address, domain) and verifyDNSE:
                 sys.stderr.write(f"DNS validation failed for {domain} and IP {ip_address}\n")
@@ -223,26 +230,40 @@ class HostsParser:
                 #if breakOnERR:
                 #    return
                 return
-            
-        if ip_address not in self.entries:
-            self.entries[ip_address] = {'active': [], 'disabled': []}
 
+        entry_type = 'active' if active else 'disabled'
         # Ensure no duplicates
-        if active:
-            for domain in domains:
-                if domain not in self.entries[ip_address]['active']:
-                    self.entries[ip_address]['active'].append(domain)
-        else:
-            for domain in domains:
-                if domain not in self.entries[ip_address]['disabled']:
-                    self.entries[ip_address]['disabled'].append(domain)
+        for i, (lnum, eType, ip, dms, comment) in enumerate(self.entries):
+            if not eType in ['active', 'disabled'] or not ip == ip_address or not entry_type == eType:
+                continue
+            if active:
+                self.entries[i] = (entry_type, ip_address, list(set(dms + domains)), lnum, None)
+            else:
+                self.entries[i] = ('disabled', ip_address, list(set(dms + domains)), lnum, None)
+            return
 
-    def _EntryExists(self, ip_address, domain):
-        if ip_address not in self.entries or (domain not in self.entries[ip_address]['active'] and domain not in self.entries[ip_address]['disabled']):
-            return False
-        return True 
+        # If the entry does not exist, add a new one
+        if line_number is None:
+            line_number = len(self.entries) + 1  # Add at the end if no line number is provided
+                
+        self.entries.append((entry_type, ip_address, domains, line_number, None))
 
-    def insert_or_update_domain(self, ip_address, domain, active=True):
+
+    def _EntryExists(self, ip_address, domain = None, active = True, iponly = False):
+        _RET = -1
+        for i, (lnum, eType, ip, dms, comment) in enumerate(self.entries):
+            if not eType in ['active', 'disabled'] or not ip == ip_address:
+                continue
+            if ip == ip_address:
+                if not iponly and not domain in dms:
+                    continue
+                if not active == None and not eType == 'active' if active else 'disabled':
+                    continue
+                _RET = i
+                break
+        return _RET
+
+    def insert_or_update_domain(self, ip_address, domain, active = True, line_number = None):
         """Insert or update a domain under a specific IP."""
         if not self._validate_syntax(ip_address, domain):
             sys.stderr.write(f"Syntax validation failed for {domain} and IP {ip_address}\n")
@@ -258,18 +279,24 @@ class HostsParser:
             #if breakOnERR:
             #    return
             return
-        if ip_address not in self.entries:
-            self.entries[ip_address] = {'active': [], 'disabled': []}
-
-        if domain in self.entries[ip_address]['active']:
-            self.entries[ip_address]['active'].remove(domain)
-        if domain in self.entries[ip_address]['disabled']:
-            self.entries[ip_address]['disabled'].remove(domain)
-
-        if active:
-            self.entries[ip_address]['active'].append(domain)
+        __EID = self._EntryExists(ip_address, domain, active)
+        entry_type = 'active' if active else 'disabled'
+        _entry_type = 'disabled' if active else 'active'
+        
+        # If the entry does not exist, add a new one
+        if line_number is None:
+            line_number = len(self.entries) + 1  # Add at the end if no line number is provided
+        
+        if __EID == -1:
+            self.entries.append((entry_type, ip_address, [domain], line_number, None))
         else:
-            self.entries[ip_address]['disabled'].append(domain)
+              for eType, ip, domains, lnum, comment in self.entries[__EID]:
+                  domains.remove(domain)
+                  _EID = self._EntryExists(ip_address, None,  active, True)
+                  if _EID == -1:
+                      self.entries.append((_entry_type, ip_address, [domain], line_number, None))
+                  else:
+                      self.entries[_EID] = (_entry_type, ip_address, list(set(domains + [domain])), self.entries[entry_id][3], None)
 
     def _validate_syntax(self, ip_address, domain):
         """Validate the syntax of IP address and domain before DNS validation."""
@@ -311,32 +338,37 @@ class HostsParser:
     def _validate_ip(self, ip_address):
         """Check if the provided IP address is valid."""
         try:
-            __RET = True
-            if not validators.ipv4(ip_address) and not validators.ipv6(ip_address):
-                __RET = False
-            return __RET
+            return validators.ipv4(ip_address) or validators.ipv6(ip_address)
         except (ValueError, ValidationError):
             return False
 
-    def save(self):
-        """Save the entries back to the hosts file."""
+    def export(self, output_file_path):
+        """Export all entries (active and disabled) to a new hosts file."""
         try:
-            with open(self.file_path, 'w') as file:
-                for ip_address, domain_data in self.entries.items():
-                     for domain in domain_data['active']:
-                         if domain in self.whitelist:
-                              file.write(f"{ip_address} {domain}")
-                         elif domain in self.blocklist:
-                              file.write(f"0.0.0.0 {domain}")
-                         else:
-                             file.write(f"{ip_address} {domain}")
-                     for domain in domain_data['disabled']:
-                         if domain in self.whitelist:
-                              file.write(f"#{ip_address} {domain}")
-                         elif domain in self.blocklist:
-                              file.write(f"#0.0.0.0 {domain}")
-                         else:
-                             file.write(f"#{ip_address} {domain}")
+             with open(output_file_path, 'w') as file:
+                for i, (lnum, eType, ip, dms, comment) in enumerate(self.entries):
+                     if eType == 'active':
+                         for domain in dms:
+                              if domain in self.whitelist:
+                                 file.write(f"{ip_address} {domain}")
+                              elif domain in self.blocklist:
+                                 file.write(f"0.0.0.0 {domain}")
+                              else:
+                                 file.write(f"{ip_address} {domain}")
+                     elif eType == 'disabled':
+                         for domain in dms:
+                              if domain in self.whitelist:
+                                 file.write(f"#{ip_address} {domain}")
+                              elif domain in self.blocklist:
+                                 file.write(f"#0.0.0.0 {domain}")
+                              else:
+                                 file.write(f"#{ip_address} {domain}")
+                     elif eType == 'comment':
+                         file.write(f"{comment}\n")
+                     elif eType == 'blank':
+                         file.write("\n")
+                     elif eType == 'ignored':
+                         file.write("# <ignored line>\n")
         except (FileNotFoundError, PermissionError, OSError, IOError) as e:
             sys.stderr.write(f"Failed to handle file {file_path} : {e}")
             if exitOnERR:
@@ -344,19 +376,23 @@ class HostsParser:
             if breakOnERR:
                 return
 
+    def save(self):
+        """Save the entries back to the hosts file."""
+        self.export(self.file_path)
+    """
     def get_active_entries(self):
         return {ip: data['active'] for ip, data in self.entries.items() if data['active']}
 
     def get_disabled_entries(self):
         return {ip: data['disabled'] for ip, data in self.entries.items() if data['disabled']}
-
+    """
     def whois_lookup(self, domains, skip_cooldown=False):
         """Perform WHOIS lookup on a list of domains, with optional cooldown."""
         for domain in domains:
             try:
                 whois_info = whois.whois(domain)
-                sys.stdout.write(f"WHOIS info for {domain}:")
-                sys.stdout.write(whois_info)
+                print(f"WHOIS info for {domain}:")
+                print(whois_info)
             except Exception as e:
                 sys.stderr.write(f"Error performing WHOIS lookup for {domain}: {e}\n")
                 if exitOnERR:
@@ -372,12 +408,14 @@ class HostsParser:
             response = requests.get(url)
             response.raise_for_status()
             remote_content = response.text
+            __LNUM = 0
             for line in remote_content.splitlines():
                 stripped_line = line.strip()
+                __LNUM += 1
                 if not stripped_line:
                     continue
                 if stripped_line.startswith('#'):
-                    self._parse_disabled_line(stripped_line)
+                    self._parse_disabled_line(stripped_line, __LNUM)
                 else:
                     parts = stripped_line.split()
                     if len(parts) >= 2:
@@ -396,50 +434,32 @@ class HostsParser:
                             sys.stderr.write(f"Skipping invalid syntax entry: {stripped_line}\n")
         except requests.RequestException as e:
             sys.stderr.write(f"Failed to fetch hosts file from URL: {e}\n")
-
-    def export(self, output_file_path):
-        """Export all entries (active and disabled) to a new hosts file."""
-        try:
-             with open(output_file_path, 'w') as file:
-                 for ip_address, domain_data in self.entries.items():
-                     for domain in domain_data['active']:
-                         if domain in self.whitelist:
-                              file.write(f"{ip_address} {domain}")
-                         elif domain in self.blocklist:
-                              file.write(f"0.0.0.0 {domain}")
-                         else:
-                             file.write(f"{ip_address} {domain}")
-                     for domain in domain_data['disabled']:
-                         if domain in self.whitelist:
-                              file.write(f"#{ip_address} {domain}")
-                         elif domain in self.blocklist:
-                              file.write(f"#0.0.0.0 {domain}")
-                         else:
-                             file.write(f"#{ip_address} {domain}")
-        except (FileNotFoundError, PermissionError, OSError, IOError) as e:
-            sys.stderr.write(f"Failed to handle file {file_path} : {e}")
-            if exitOnERR:
-                sys.exit()
-            if breakOnERR:
-                return
                     
-    def fetchList(self):
+    def fetchData(self):
         __HOSTS__str = []
-        for ip_address, domain_data in self.entries.items():
-            for domain in domain_data['active']:
-                if domain in self.whitelist:
-                    __HOSTS__str.append(f"{ip_address} {domain}")
-                elif domain in self.blocklist:
-                    __HOSTS__str.append(f"0.0.0.0 {domain}")
-                else:
-                    __HOSTS__str.append(f"{ip_address} {domain}")
-            for domain in domain_data['disabled']:
-                if domain in self.whitelist:
-                    __HOSTS__str.append(f"#{ip_address} {domain}")
-                elif domain in self.blocklist:
-                    __HOSTS__str.append(f"#0.0.0.0 {domain}")
-                else:
-                    __HOSTS__str.append(f"#{ip_address} {domain}")
+        for i, (lnum, eType, ip, dms, comment) in enumerate(self.entries):
+             if eType == 'active':
+                for domain in dms:
+                    if domain in self.whitelist:
+                        __HOSTS__str.append(f"{ip_address} {domain}")
+                    elif domain in self.blocklist:
+                        __HOSTS__str.append(f"0.0.0.0 {domain}")
+                    else:
+                        __HOSTS__str.append(f"{ip_address} {domain}")
+             elif eType == 'disabled':
+                for domain in dms:
+                    if domain in self.whitelist:
+                         __HOSTS__str.append(f"#{ip_address} {domain}")
+                    elif domain in self.blocklist:
+                        __HOSTS__str.append(f"#0.0.0.0 {domain}")
+                    else:
+                        _HOSTS__str.append(f"#{ip_address} {domain}")
+             elif eType == 'comment':
+                 __HOSTS__str.append(f"{comment}\n")
+             elif eType == 'blank':
+                 __HOSTS__str.append("\n")
+             elif eType == 'ignored':
+                 __HOSTS__str.append("# <ignored line>\n")
         return __HOSTS__str
 
 try:
@@ -456,12 +476,12 @@ try:
                 except Exception as e:
                      sys.stderr.write(f"Sorry, something went wrong\r\n{e}")
                 else:
-                     for line in BlocksetF.readline():
+                     for line_number, line in enumerate(BlocksetF.readline(), 1):
                         stripped_line = line.strip()
                         if not stripped_line:
                             continue
                         if stripped_line.startswith('#'):
-                            parser._parse_disabled_line(stripped_line)
+                            parser._parse_disabled_line(stripped_line, line_number)
                         else:
                             parts = stripped_line.split()
                             if len(parts) >= 2:
@@ -484,14 +504,14 @@ try:
 
          for hFile in addedF:
                 if verboseOut:
-                    sys.stdout.write(f"Processing File {hFile}")
+                    print(f"Processing File {hFile}")
                 parser.fetch_and_merge_hosts(hFile)
          time.sleep(parser.cooldown)
 
          # Disabled entries
          for entry in disabledE:
              ip,domain = entry.split(':')
-             if not parser._EntryExists(ip, domain):
+             if not parser._EntryExists(ip, domain, True):
                  sys.stderr.write(f"Domain {domain} or IP Address {ip} isn't a valid entry'")
                  continue
              parser.insert_or_update_domain(ip, domain, active=False)
@@ -500,7 +520,7 @@ try:
          # Enabled  entries
          for entry in enabledE:
              ip,domain = entry.split(':')
-             if not parser._EntryExists(ip, domain):
+             if not parser._EntryExists(ip, domain, False):
                  sys.stderr.write(f"Domain {domain} or IP Address {ip} isn't a valid entry'")
                  continue
              parser.insert_or_update_domain(ip, domain, active=True)
@@ -509,7 +529,7 @@ try:
          # Additional  entries
          for entry in addedE:
              ip,domain = entry.split(':')
-             if parser._EntryExists(ip, domain):
+             if parser._EntryExists(ip, domain, None):
                  sys.stderr.write(f"Domain {domain} or IP Address {ip} already exists'")
                  continue
              parser.insert_or_update_domain(ip, domain, active=True)
@@ -517,19 +537,19 @@ try:
 
          if parser.saveF:
              if verboseOut:
-                 sys.stdout.write("overwriting original hosts file...")
+                 print("overwriting original hosts file...")
              parser.save()
 
          if printData:
-            #sys.stdout.write('\n'.join([item + '\n' for item in parser.fetchList()]))
-            sys.stdout.write('\n'.join(parser.fetchList()))
+            #print('\n'.join([item + '\n' for item in parser.fetchData()]))
+            print('\n'.join(parser.fetchData()))
          else:
              if exportF == '__PRINT__':
-                 #sys.stdout.write('\n'.join([item + '\n' for item in parser.fetchList()]))
-                 sys.stdout.write('\n'.join(parser.fetchList()))
+                 #print('\n'.join([item + '\n' for item in parser.fetchData()]))
+                 print('\n'.join(parser.fetchData()))
              else:
                  parser.export(exportF)
 except KeyboardInterrupt:
-    sys.stdout.write('Exiting...')
+    print('Exiting...')
 except Exception as e:
     sys.stderr.write(f"Sorry, something went wrong\r\n{e}\n")
