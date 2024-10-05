@@ -14,6 +14,7 @@ import array
 import struct
 import fcntl
 import validators
+import json
 
 # Detecting Python 3 for version-dependent implementations
 if sys.version_info.major < 3:
@@ -76,6 +77,79 @@ def getLocalIFNames():
 
     return ifnamedict
 
+class FileCache:
+    def __init__(self, cache_file):
+        """Initialize the cache."""
+        self.cache_file = cache_file
+        self.cache = {}
+        self.load_cache()
+
+    def load_cache(self):
+        """Load the cache from a JSON file."""
+        try:
+            with open(self.cache_file, 'r') as f:
+                self.cache = json.load(f)
+        except (FileNotFoundError, json.JSONDecodeError):
+            self.cache = {}  # Initialize an empty cache if the file doesn't exist or is invalid
+
+    def save_cache(self):
+        """Save the cache to a JSON file."""
+        with open(self.cache_file, 'w') as f:
+            json.dump(self.cache, f)
+
+    def get(self, key):
+        """Retrieve a value from the cache."""
+        return self.cache.get(key)
+
+    def set(self, key, value):
+        """Set a value in the cache and save to file."""
+        self.cache[key] = value
+        self.save_cache()
+
+
+class DNSCache:
+    def __init__(self, cache_file, max_cache_size=100, expiration_time=60):
+        """Initialize the DNS cache."""
+        self.cache_file = cache_file
+        self.max_cache_size = max_cache_size
+        self.expiration_time = expiration_time
+        self.file_cache = FileCache(self.cache_file)
+
+    def lookup(self, domain):
+        """Perform a DNS lookup for the given domain."""
+        current_time = time.time()
+        
+        # Check if the domain is in the cache
+        cache_entry = self.file_cache.get(domain)
+        if cache_entry:
+            ip_address, timestamp = cache_entry
+            # Check if the cached entry has expired
+            if current_time - timestamp < self.expiration_time:
+                print(f"Cache hit for {domain}: {ip_address}")
+                return ip_address
+            else:
+                # Remove expired entry
+                del self.file_cache.cache[domain]
+
+        # Perform DNS lookup since it's a cache miss or expired
+        try:
+            ip_address = socket.gethostbyname(domain)
+            self._cache_result(domain, ip_address)
+            return ip_address
+        except socket.gaierror:
+            print(f"DNS lookup failed for {domain}")
+            return None
+
+    def _cache_result(self, domain, ip_address):
+        """Cache the result of a DNS lookup."""
+        if len(self.file_cache.cache) >= self.max_cache_size:
+            # Remove the oldest entry (FIFO)
+            oldest_domain = next(iter(self.file_cache.cache))
+            del self.file_cache.cache[oldest_domain]
+            print(f"Cache full. Removed oldest entry: {oldest_domain}")
+
+        self.file_cache.set(domain, (ip_address, time.time()))  # Cache the IP address with the current timestamp
+
 class HostsParser:
     def __init__(self, file_path):
         self.file_path = file_path
@@ -88,7 +162,9 @@ class HostsParser:
         self.whois_cooldown = self.settings.getfloat('WHOIS', 'cooldown', fallback=0.5)
         self.cooldown = self.settings.getfloat('General', 'cooldown', fallback=0.5)
         self.saveF = self.settings.getboolean('General', 'save', fallback=False)
-    
+        self.parsed_data_cache = FileCache(os.path.join(CACHE_PATH, 'parsed_hosts_cache.json'))
+        self.dns_cache = DNSCache(os.path.join(CACHE_PATH, 'dns_cache.json'), 50000)
+
     def _load_settings(self):
         """Load configuration from settings.ini."""
         config = configparser.ConfigParser()
@@ -248,7 +324,6 @@ class HostsParser:
                 
         self.entries.append((entry_type, ip_address, domains, line_number, None))
 
-
     def _EntryExists(self, ip_address, domain = None, active = True, iponly = False):
         _RET = -1
         for i, (lnum, eType, ip, dms, comment) in enumerate(self.entries):
@@ -327,7 +402,7 @@ class HostsParser:
                     __LOCAL = True
                     break
             if not __LOCAL:
-                resolved_ip = socket.gethostbyname(domain)
+                resolved_ip = self.dns_cache.lookup(domain)
                 return resolved_ip == ip_address
             else:
                 return __LOCAL
@@ -379,13 +454,15 @@ class HostsParser:
     def save(self):
         """Save the entries back to the hosts file."""
         self.export(self.file_path)
-    """
+
     def get_active_entries(self):
-        return {ip: data['active'] for ip, data in self.entries.items() if data['active']}
+        """Return a dictionary of active IPs and their associated domains."""
+        return {ip: domains for i, (line_number, eType, ip, domains, comment) in enumerate(self.entries) if eType == 'active'}
 
     def get_disabled_entries(self):
-        return {ip: data['disabled'] for ip, data in self.entries.items() if data['disabled']}
-    """
+        """Return a dictionary of disabled IPs and their associated domains."""
+        return {ip: domains for i, (line_number, eType, ip, domains, comment) in enumerate(self.entries) if eType == 'disabled'}
+
     def whois_lookup(self, domains, skip_cooldown=False):
         """Perform WHOIS lookup on a list of domains, with optional cooldown."""
         for domain in domains:
@@ -408,14 +485,17 @@ class HostsParser:
             response = requests.get(url)
             response.raise_for_status()
             remote_content = response.text
-            __LNUM = 0
-            for line in remote_content.splitlines():
+            for line_number, line in enumerate(remote_content.splitlines(), 1):
                 stripped_line = line.strip()
-                __LNUM += 1
                 if not stripped_line:
+                    # Blank line, store as-is
+                    self.entries.append(('blank', None, None, line_number, line))
                     continue
                 if stripped_line.startswith('#'):
-                    self._parse_disabled_line(stripped_line, __LNUM)
+                    if not re.match(r"#\s*(\d{1,3}(?:\.\d{1,3}){3})\s+([\w.-]+)", line):
+                        self.entries.append(('comment', None, None, line_number, line))
+                    else:	
+                        self._parse_disabled_line(stripped_line, line_number)
                 else:
                     parts = stripped_line.split()
                     if len(parts) >= 2:
