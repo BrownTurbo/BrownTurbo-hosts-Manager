@@ -91,11 +91,20 @@ class FileCache:
                 self.cache = json.load(f)
         except (FileNotFoundError, json.JSONDecodeError):
             self.cache = {}  # Initialize an empty cache if the file doesn't exist or is invalid
+        except (PermissionError, IOError) as e:
+            sys.stderr.write(f"Failed to handle file {self.cache_file} : {e}")
+            if exitOnERR:
+                sys.exit()
 
     def save_cache(self):
         """Save the cache to a JSON file."""
-        with open(self.cache_file, 'w') as f:
-            json.dump(self.cache, f)
+        try:
+            with open(self.cache_file, 'w') as f:
+                json.dump(self.cache, f)
+        except (FileNotFoundError, PermissionError, OSError, IOError) as e:
+            sys.stderr.write(f"Failed to handle file {self.cache_file} : {e}")
+            if exitOnERR:
+                sys.exit()
 
     def get(self, key):
         """Retrieve a value from the cache."""
@@ -316,7 +325,6 @@ class HostsParser:
                 self.entries[i] = (entry_type, ip_address, list(set(dms + domains)), lnum, None)
             else:
                 self.entries[i] = ('disabled', ip_address, list(set(dms + domains)), lnum, None)
-            return
 
         # If the entry does not exist, add a new one
         if line_number is None:
