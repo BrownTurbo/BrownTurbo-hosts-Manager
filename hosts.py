@@ -489,33 +489,41 @@ class HostsParser:
         except (ValueError, ValidationError):
             return False
     @profile
-    def export(self, output_file_path):
+    def export(self, output_file_path, buffer_size=1000):
         """Export all entries (active and disabled) to a new hosts file."""
+        _buffer = []
         try:
              with open(output_file_path, 'w') as file:
                 for i, (eType, ip, dms, lnum, comment) in enumerate(self.entries):
                      if eType == 'active':
                          for domain in dms:
                               if domain in self.whitelist:
-                                 file.write(f"{ip_address} {domain}")
+                                 _buffer.append(f"{ip_address} {domain}")
                               elif domain in self.blocklist:
-                                 file.write(f"0.0.0.0 {domain}")
+                                 _buffer.append(f"0.0.0.0 {domain}")
                               else:
-                                 file.write(f"{ip_address} {domain}")
+                                 _buffer.append(f"{ip_address} {domain}")
                      elif eType == 'disabled':
                          for domain in dms:
                               if domain in self.whitelist:
-                                 file.write(f"#{ip_address} {domain}")
+                                 _buffer.append(f"#{ip_address} {domain}")
                               elif domain in self.blocklist:
-                                 file.write(f"#0.0.0.0 {domain}")
+                                 _buffer.append(f"#0.0.0.0 {domain}")
                               else:
-                                 file.write(f"#{ip_address} {domain}")
+                                 _buffer.append(f"#{ip_address} {domain}")
                      elif eType == 'comment':
-                         file.write(f"{comment}\n")
+                         _buffer.append(f"{comment}\n")
                      elif eType == 'blank':
-                         file.write("\n")
+                         _buffer.append("\n")
                      elif eType == 'ignored':
-                         file.write("# <ignored line>\n")
+                         _buffer.append("# <ignored line>\n")
+                if len(buffer) >= buffer_size:
+                     file.write('\n'.join(_buffer))
+                     buffer = []
+
+                # Write any remaining data in buffer
+                if _buffer:
+                     file.write('\n'.join(_buffer))
                 if not file.closed:
                      file.close()
         except (FileNotFoundError, PermissionError, OSError, IOError) as e:
