@@ -210,7 +210,7 @@ class HostsParser:
         else:
             raise Exception(f"Settings file not found: {config_path}")
     @profile
-    def chunkify(self, file, chunk_size=1000):
+    def _chunkify(self, file, chunk_size=1000):
         """Generator function to read the file in chunks."""
         chunk = []
         for i, line in enumerate(file):
@@ -225,7 +225,7 @@ class HostsParser:
         """Process each chunk of entries."""
         for line_number, line in enumerate(chunk, 1):
             stripped_line = line.strip()
-            if not stripped_line:
+            if len(line) == 0 or line in ['\n', '\r\n']:
                 # Blank line, store as-is
                 self.entries.append(('blank', None, None, line_number, line))
                 continue
@@ -237,14 +237,14 @@ class HostsParser:
             else:
                 self._parse_active_line(stripped_line, line_number)
     @profile
-    def parse(self, chunk_size=1000, max_workers=10):
+    def parse(self, chunk_size=1000, max_workers=15):
         """Parse the local hosts file and store entries."""
         self._parse_blocklist()
         self._parse_allowlist()
         try:
             with open(self.file_path, 'r') as file:
-                chunks = list(self.chunkify(file, chunk_size))
-                with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
+                chunks = list(self._chunkify(file, chunk_size))
+                with concurrent.futures.ProcessPoolExecutor(max_workers=max_workers) as executor:
                     futures = [executor.submit(self._process_chunk, chunk) for chunk in chunks]
                     for future in concurrent.futures.as_completed(futures):
                          future.result()
@@ -561,7 +561,7 @@ class HostsParser:
             remote_content = response.text
             for line_number, line in enumerate(remote_content.splitlines(), 1):
                 stripped_line = line.strip()
-                if not stripped_line:
+                if len(line) == 0 or line in ['\n', '\r\n']:
                     # Blank line, store as-is
                     self.entries.append(('blank', None, None, line_number, line))
                     continue
@@ -576,14 +576,7 @@ class HostsParser:
                         ip_address = parts[0]
                         domains = parts[1:]
                         if self._validate_syntax(ip_address, domains[0]):
-                            if verifyDNSE:
-                               valid_domains = [domain for domain in domains if self._validate_domain_ip(ip_address, domain)]
-                               if valid_domains:
-                                  self._add_entry(f"{ip_address} {' '.join(valid_domains)}", active=True)
-                               else:
-                                  sys.stderr.write(f"Skipping invalid DNS entry: {stripped_line}\n")
-                            else:
-                                self._add_entry(f"{ip_address} {' '.join(valid_domains)}", active=True)
+                            self._add_entry(f"{ip_address} {' '.join(valid_domains)}", active=True)
                         else:
                             sys.stderr.write(f"Skipping invalid syntax entry: {stripped_line}\n")
         except requests.RequestException as e:
@@ -632,24 +625,21 @@ try:
                 else:
                      for line_number, line in enumerate(BlocksetF.readline(), 1):
                         stripped_line = line.strip()
-                        if not stripped_line:
+                        if len(line) == 0 or line in ['\n', '\r\n']:
+                            parser.entries.append(('blank', None, None, line_number, line))
                             continue
                         if stripped_line.startswith('#'):
-                            parser._parse_disabled_line(stripped_line, line_number)
+                            if not re.match(r"#\s*(\d{1,3}(?:\.\d{1,3}){3})\s+([\w.-]+)", line):
+                                parser.entries.append(('comment', None, None, line_number, line))
+                            else:
+                                parser._parse_disabled_line(stripped_line, line_number)
                         else:
                             parts = stripped_line.split()
                             if len(parts) >= 2:
                                 ip_address = parts[0]
                                 domains = parts[1:]
                                 if parser._validate_syntax(ip_address, domains[0]):
-                                    if verifyDNSE:
-                                       valid_domains = [domain for domain in domains if parser._validate_domain_ip(ip_address, domain)]
-                                       if valid_domains:
-                                          parser._add_entry(f"{ip_address} {' '.join(valid_domains)}", active=True)
-                                       else:
-                                          sys.stderr.write(f"Skipping invalid DNS entry: {stripped_line}\n")
-                                    else:
-                                        parser._add_entry(f"{ip_address} {' '.join(valid_domains)}", active=True)
+                                    parser._add_entry(f"{ip_address} {' '.join(valid_domains)}", active=True)
                                 else:
                                     sys.stderr.write(f"Skipping invalid syntax entry: {stripped_line}\n")
                      if not BlocksetF.closed:
