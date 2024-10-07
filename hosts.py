@@ -15,6 +15,8 @@ import struct
 import fcntl
 import validators
 import json
+import concurrent.futures
+from line_profiler import profile
 
 # Detecting Python 3 for version-dependent implementations
 if sys.version_info.major < 3:
@@ -57,6 +59,7 @@ BASEDIR_PATH = os.path.dirname(os.path.realpath(__file__))
 CACHE_PATH = os.path.expanduser('~' + os.sep + '.cache')
 TMP_PATH = os.path.expanduser('~' + os.sep + '.tmp')
 
+@profile
 def getLocalIFNames():
     MAX_BYTES = 4096
     FILL_CHAR = b'\0'
@@ -78,17 +81,22 @@ def getLocalIFNames():
     return ifnamedict
 
 class FileCache:
-    def __init__(self, cache_file):
+    @profile
+    def __init__(self, cache_file, flush_threshold=10):
         """Initialize the cache."""
         self.cache_file = cache_file
         self.cache = {}
+        self.flush_threshold = flush_threshold
+        self.buffer = []  # Buffer to hold writes
         self.load_cache()
-
+    @profile
     def load_cache(self):
         """Load the cache from a JSON file."""
         try:
             with open(self.cache_file, 'r') as f:
                 self.cache = json.load(f)
+                if not f.closed:
+                    f.close()
         except (FileNotFoundError, json.JSONDecodeError):
             self.cache = {}  # Initialize an empty cache if the file doesn't exist or is invalid
         except (PermissionError, IOError) as e:
@@ -96,35 +104,44 @@ class FileCache:
             if exitOnERR:
                 sys.exit()
 
+    @profile
     def save_cache(self):
         """Save the cache to a JSON file."""
         try:
             with open(self.cache_file, 'w') as f:
                 json.dump(self.cache, f)
+                
+                self.buffer = []  # Clear the buffer after flushing
+                if not f.closed:
+                   f.close()
         except (FileNotFoundError, PermissionError, OSError, IOError) as e:
             sys.stderr.write(f"Failed to handle file {self.cache_file} : {e}")
             if exitOnERR:
                 sys.exit()
 
+    @profile
     def get(self, key):
         """Retrieve a value from the cache."""
         return self.cache.get(key)
-
+    @profile
     def set(self, key, value):
         """Set a value in the cache and save to file."""
         self.cache[key] = value
-        self.save_cache()
+        self.buffer.append((key, value))
 
+        if len(self.buffer) >= self.flush_threshold:
+            self.save_cache()
 
 class DNSCache:
+    @profile
     def __init__(self, cache_file, max_cache_size=100, expiration_time=60):
         """Initialize the DNS cache."""
         self.cache_file = cache_file
         self.max_cache_size = max_cache_size
         self.expiration_time = expiration_time
         self.file_cache = FileCache(self.cache_file)
-
-    def lookup(self, domain):
+    @profile
+    def lookup(self, domain, timeout = 5):
         """Perform a DNS lookup for the given domain."""
         current_time = time.time()
         
@@ -142,13 +159,20 @@ class DNSCache:
 
         # Perform DNS lookup since it's a cache miss or expired
         try:
-            ip_address = socket.gethostbyname(domain)
-            self._cache_result(domain, ip_address)
-            return ip_address
-        except socket.gaierror:
-            print(f"DNS lookup failed for {domain}")
-            return None
-
+            with concurrent.futures.ThreadPoolExecutor() as executor:
+                ip_address = executor.submit(socket.gethostbyname, domain)
+                try:
+                    ip_address = ip_address.result(timeout=timeout)
+                    self._cache_result(domain, ip_address)
+                    return ip_address
+                except concurrent.futures.TimeoutError:
+                    sys.stderr.write(f"DNS lookup for {domain} timed out.\n")
+                except socket.gaierror:
+                    sys.stderr.write(f"DNS lookup failed for {domain}\n")
+        except Exception as e:
+            sys.stderr.write(f"Something went wrong when processing DNS Lookup for {domain}\n{e}\n")
+        return None
+    @profile
     def _cache_result(self, domain, ip_address):
         """Cache the result of a DNS lookup."""
         if len(self.file_cache.cache) >= self.max_cache_size:
@@ -172,8 +196,8 @@ class HostsParser:
         self.cooldown = self.settings.getfloat('General', 'cooldown', fallback=0.5)
         self.saveF = self.settings.getboolean('General', 'save', fallback=False)
         self.parsed_data_cache = FileCache(os.path.join(CACHE_PATH, 'parsed_hosts_cache.json'))
-        self.dns_cache = DNSCache(os.path.join(CACHE_PATH, 'dns_cache.json'), 50000)
-
+        self.dns_cache = DNSCache(os.path.join(CACHE_PATH, 'dns_cache.json'), 70000)
+    @profile
     def _load_settings(self):
         """Load configuration from settings.ini."""
         config = configparser.ConfigParser()
@@ -183,7 +207,7 @@ class HostsParser:
             self.settings = config
         else:
             raise Exception(f"Settings file not found: {config_path}")
-
+    @profile
     def parse(self):
         """Parse the local hosts file and store entries."""
         self._parse_blocklist()
@@ -203,17 +227,19 @@ class HostsParser:
                             self._parse_disabled_line(stripped_line, line_number)
                     else:
                         self._parse_active_line(stripped_line, line_number)
+                if not file.closed:
+                   file.close()
         except (FileNotFoundError, PermissionError, IOError) as e:
             sys.stderr.write(f"Failed to handle file {file_path} : {e}")
             if exitOnERR:
                 sys.exit()
             if breakOnERR:
                 return
-
+    @profile
     def search_domain(self, domain):
         """Search for a domain in the entries."""
         found_entries = {}
-        for i, (line_number, eType, ip, domains, comment) in enumerate(self.entries):
+        for i, (eType, ip, domains, line_number, comment) in enumerate(self.entries):
             if not eType in ['active', 'disabled']:
                 continue
             if domain in domains:
@@ -224,15 +250,15 @@ class HostsParser:
                     'entry': i
                 }
         return found_entries
-
+    @profile
     def delete_entry(self, eID, domain):
         """Delete a domain entry from the hosts file."""
-        for i, (line_number, eType, ip, domains, comment) in enumerate(self.entries):
+        for i, (eType, ip, domains, line_number, comment) in enumerate(self.entries):
             if not eType in ['active', 'disabled'] or not eID == i:
                 continue
             if domain in domains:
                 domains.remove(domain)
-
+    @profile
     def move_between_blocksets(self, domain, from_blockset, to_blockset):
         """Move an entry between blocksets, e.g., from allowlist to blocklist."""
         if from_blockset == 'allowlist' and domain in self.whitelist:
@@ -256,7 +282,7 @@ class HostsParser:
                 sys.exit()
             if breakOnERR:
                 return
-
+    @profile
     def _parse_blocklist(self):
         """Parse the blocklist file."""
         blocklist_path = os.path.join(BASEDIR_PATH, '.blocklist')
@@ -264,13 +290,15 @@ class HostsParser:
             try:
                 with open(blocklist_path, 'r') as file:
                     self.blocklist = [line.strip() for line in file if line.strip()]
+                    if not file.closed:
+                        file.close()
             except (FileNotFoundError, PermissionError, IOError) as e:
                 sys.stderr.write(f"Failed to handle file {file_path} : {e}")
                 if exitOnERR:
                     sys.exit()
                 if breakOnERR:
                     return
-
+    @profile
     def _parse_allowlist(self):
         """Parse the allowlist file."""
         allowlist_path = os.path.join(BASEDIR_PATH, '.allowlist')
@@ -278,23 +306,25 @@ class HostsParser:
             try:
                 with open(allowlist_path, 'r') as file:
                     self.whitelist = [line.strip() for line in file if line.strip()]
+                    if not file.closed:
+                        file.close()
             except (FileNotFoundError, PermissionError, IOError) as e:
                 sys.stderr.write(f"Failed to handle file {file_path} : {e}")
                 if exitOnERR:
                     sys.exit()
                 if breakOnERR:
                     return
-
+    @profile
     def _parse_disabled_line(self, line, line_number=None):
         """Parse and store disabled domains."""
         line_content = line.lstrip('#').strip()
         if line_content:
             self._add_entry(line_content, False, line_number)
-
+    @profile
     def _parse_active_line(self, line, line_number=None):
         """Parse and store active domains."""
         self._add_entry(line, True, line_number)
-
+    @profile
     def _add_entry(self, line, active=True, line_number=None):
         parts = line.split()
         if len(parts) < 2:
@@ -318,23 +348,24 @@ class HostsParser:
 
         entry_type = 'active' if active else 'disabled'
         # Ensure no duplicates
-        for i, (lnum, eType, ip, dms, comment) in enumerate(self.entries):
+        for i, (eType, ip, dms, lnum, comment) in enumerate(self.entries):
             if not eType in ['active', 'disabled'] or not ip == ip_address or not entry_type == eType:
                 continue
             if active:
                 self.entries[i] = (entry_type, ip_address, list(set(dms + domains)), lnum, None)
             else:
                 self.entries[i] = ('disabled', ip_address, list(set(dms + domains)), lnum, None)
+            break
 
         # If the entry does not exist, add a new one
         if line_number is None:
             line_number = len(self.entries) + 1  # Add at the end if no line number is provided
                 
         self.entries.append((entry_type, ip_address, domains, line_number, None))
-
+    @profile
     def _EntryExists(self, ip_address, domain = None, active = True, iponly = False):
         _RET = -1
-        for i, (lnum, eType, ip, dms, comment) in enumerate(self.entries):
+        for i, (eType, ip, dms, lnum, comment) in enumerate(self.entries):
             if not eType in ['active', 'disabled'] or not ip == ip_address:
                 continue
             if ip == ip_address:
@@ -345,7 +376,7 @@ class HostsParser:
                 _RET = i
                 break
         return _RET
-
+    @profile
     def insert_or_update_domain(self, ip_address, domain, active = True, line_number = None):
         """Insert or update a domain under a specific IP."""
         if not self._validate_syntax(ip_address, domain):
@@ -380,7 +411,7 @@ class HostsParser:
                       self.entries.append((_entry_type, ip_address, [domain], line_number, None))
                   else:
                       self.entries[_EID] = (_entry_type, ip_address, list(set(domains + [domain])), self.entries[entry_id][3], None)
-
+    @profile
     def _validate_syntax(self, ip_address, domain):
         """Validate the syntax of IP address and domain before DNS validation."""
         if not self._validate_ip(ip_address):
@@ -390,7 +421,7 @@ class HostsParser:
             sys.stderr.write(f"Invalid domain format: {domain}\n")
             return False
         return True
-
+    @profile
     def _validate_domain_syntax(self, domain):
         """Check if a domain name follows a valid pattern."""
         if domain in ("localhost", "local") or domain == platform.node():
@@ -398,7 +429,7 @@ class HostsParser:
         #return validators.domain(domain)
         domain_pattern = re.compile(r"^([a-zA-Z0-9-_]{1,63}\.)+[a-zA-Z0-9-]{2,}(\.)?$")
         return bool(domain_pattern.match(domain))
-
+    @profile
     def _validate_domain_ip(self, ip_address, domain):
         """Check if the domain resolves to the given IP address using DNS."""
         try:
@@ -417,19 +448,19 @@ class HostsParser:
         except Exception as e:
             sys.stderr.write(f"DNS Verification process failed : {e}\n")
             return False
-
+    @profile
     def _validate_ip(self, ip_address):
         """Check if the provided IP address is valid."""
         try:
             return validators.ipv4(ip_address) or validators.ipv6(ip_address)
         except (ValueError, ValidationError):
             return False
-
+    @profile
     def export(self, output_file_path):
         """Export all entries (active and disabled) to a new hosts file."""
         try:
              with open(output_file_path, 'w') as file:
-                for i, (lnum, eType, ip, dms, comment) in enumerate(self.entries):
+                for i, (eType, ip, dms, lnum, comment) in enumerate(self.entries):
                      if eType == 'active':
                          for domain in dms:
                               if domain in self.whitelist:
@@ -452,25 +483,27 @@ class HostsParser:
                          file.write("\n")
                      elif eType == 'ignored':
                          file.write("# <ignored line>\n")
+                if not file.closed:
+                     file.close()
         except (FileNotFoundError, PermissionError, OSError, IOError) as e:
             sys.stderr.write(f"Failed to handle file {file_path} : {e}")
             if exitOnERR:
                 sys.exit()
             if breakOnERR:
                 return
-
+    @profile
     def save(self):
         """Save the entries back to the hosts file."""
         self.export(self.file_path)
-
+    @profile
     def get_active_entries(self):
         """Return a dictionary of active IPs and their associated domains."""
-        return {ip: domains for i, (line_number, eType, ip, domains, comment) in enumerate(self.entries) if eType == 'active'}
-
+        return {ip: domains for i, (eType, ip, domains, line_number, comment) in enumerate(self.entries) if eType == 'active'}
+    @profile
     def get_disabled_entries(self):
         """Return a dictionary of disabled IPs and their associated domains."""
-        return {ip: domains for i, (line_number, eType, ip, domains, comment) in enumerate(self.entries) if eType == 'disabled'}
-
+        return {ip: domains for i, (eType, ip, domains, line_number, comment) in enumerate(self.entries) if eType == 'disabled'}
+    @profile
     def whois_lookup(self, domains, skip_cooldown=False):
         """Perform WHOIS lookup on a list of domains, with optional cooldown."""
         for domain in domains:
@@ -486,7 +519,7 @@ class HostsParser:
                     return
             if not skip_cooldown:
                 time.sleep(self.whois_cooldown)
-
+    @profile
     def fetch_and_merge_hosts(self, url):
         """Fetch a remote hosts file from a URL and merge with local entries."""
         try:
@@ -522,10 +555,10 @@ class HostsParser:
                             sys.stderr.write(f"Skipping invalid syntax entry: {stripped_line}\n")
         except requests.RequestException as e:
             sys.stderr.write(f"Failed to fetch hosts file from URL: {e}\n")
-                    
+    @profile
     def fetchData(self):
         __HOSTS__str = []
-        for i, (lnum, eType, ip, dms, comment) in enumerate(self.entries):
+        for i, (eType, ip_address, dms, lnum, comment) in enumerate(self.entries):
              if eType == 'active':
                 for domain in dms:
                     if domain in self.whitelist:
@@ -541,7 +574,7 @@ class HostsParser:
                     elif domain in self.blocklist:
                         __HOSTS__str.append(f"#0.0.0.0 {domain}")
                     else:
-                        _HOSTS__str.append(f"#{ip_address} {domain}")
+                        __HOSTS__str.append(f"#{ip_address} {domain}")
              elif eType == 'comment':
                  __HOSTS__str.append(f"{comment}\n")
              elif eType == 'blank':
