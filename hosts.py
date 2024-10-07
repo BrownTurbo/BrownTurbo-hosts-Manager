@@ -244,7 +244,7 @@ class HostsParser:
         try:
             with open(self.file_path, 'r') as file:
                 chunks = list(self._chunkify(file, chunk_size))
-                with concurrent.futures.ProcessPoolExecutor(max_workers=max_workers) as executor:
+                with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
                     futures = [executor.submit(self._process_chunk, chunk) for chunk in chunks]
                     for future in concurrent.futures.as_completed(futures):
                          future.result()
