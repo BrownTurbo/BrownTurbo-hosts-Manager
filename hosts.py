@@ -419,7 +419,7 @@ class HostsParser:
         if not self._validate_ip(ip_address):
             sys.stderr.write(f"Invalid IP format: {ip_address}\n")
             return False
-        if not self._validate_domain_syntax(domain) and domain != 'localhost':
+        if not self._validate_domain_syntax(domain):
             sys.stderr.write(f"Invalid domain format: {domain}\n")
             return False
         return True
