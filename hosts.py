@@ -197,6 +197,7 @@ class HostsParser:
         self.saveF = self.settings.getboolean('General', 'save', fallback=False)
         self.parsed_data_cache = FileCache(os.path.join(CACHE_PATH, 'parsed_hosts_cache.json'))
         self.dns_cache = DNSCache(os.path.join(CACHE_PATH, 'dns_cache.json'), 70000)
+        self.ip_cache = {}
     @profile
     def _load_settings(self):
         """Load configuration from settings.ini."""
@@ -430,10 +431,11 @@ class HostsParser:
         domain_pattern = re.compile(r"^([a-zA-Z0-9-_]{1,63}\.)+[a-zA-Z0-9-]{2,}(\.)?$")
         return bool(domain_pattern.match(domain))
     @profile
-    def _validate_domain_ip(self, ip_address, domain):
+    def _validate_domain_ip(self, ip_address, domain, timeout=7):
         """Check if the domain resolves to the given IP address using DNS."""
         try:
             __LOCAL = False
+            socket.setdefaulttimeout(timeout)
             for __IFNAME in getLocalIFNames():
                 __LOCALIP = socket.inet_ntoa(fcntl.ioctl(socket.socket(socket.AF_INET, socket.SOCK_DGRAM), 0x8915, struct.pack('256s', __IFNAME.encode('utf-8')))[20:24])
                 __NETMASK = socket.inet_ntoa(fcntl.ioctl(socket.socket(socket.AF_INET, socket.SOCK_DGRAM), 35099, struct.pack('256s', __IFNAME.encode('utf-8')))[20:24])
@@ -452,7 +454,12 @@ class HostsParser:
     def _validate_ip(self, ip_address):
         """Check if the provided IP address is valid."""
         try:
-            return validators.ipv4(ip_address) or validators.ipv6(ip_address)
+            if ip_address in self.ip_cache:
+                return self.ip_cache[ip_address]
+
+            ip_obj = validators.ipv4(ip_address) or validators.ipv6(ip_address)
+            self.ip_cache[ip_address] = ip_obj  # Cache the result
+            return ip_obj
         except (ValueError, ValidationError):
             return False
     @profile
