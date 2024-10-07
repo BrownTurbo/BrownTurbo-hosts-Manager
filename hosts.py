@@ -210,29 +210,54 @@ class HostsParser:
         else:
             raise Exception(f"Settings file not found: {config_path}")
     @profile
-    def parse(self):
+    def chunkify(self, file, chunk_size=1000):
+        """Generator function to read the file in chunks."""
+        chunk = []
+        for i, line in enumerate(file):
+            chunk.append(line)
+            if (i + 1) % chunk_size == 0:
+                yield chunk
+                chunk = []
+        if chunk:
+            yield chunk
+    @profile
+    def _process_chunk(self, chunk):
+        """Process each chunk of entries."""
+        for line_number, line in enumerate(chunk, 1):
+            stripped_line = line.strip()
+            if not stripped_line:
+                # Blank line, store as-is
+                self.entries.append(('blank', None, None, line_number, line))
+                continue
+            if stripped_line.startswith('#'):
+                if not re.match(r"#\s*(\d{1,3}(?:\.\d{1,3}){3})\s+([\w.-]+)", line):
+                    self.entries.append(('comment', None, None, line_number, line))
+                else:
+                    self._parse_disabled_line(stripped_line, line_number)
+            else:
+                self._parse_active_line(stripped_line, line_number)
+    @profile
+    def parse(self, chunk_size=1000, max_workers=10):
         """Parse the local hosts file and store entries."""
         self._parse_blocklist()
         self._parse_allowlist()
         try:
             with open(self.file_path, 'r') as file:
-                for line_number, line in enumerate(file, 1):
-                    stripped_line = line.strip()
-                    if not stripped_line:
-                        # Blank line, store as-is
-                        self.entries.append(('blank', None, None, line_number, line))
-                        continue
-                    if stripped_line.startswith('#'):
-                        if not re.match(r"#\s*(\d{1,3}(?:\.\d{1,3}){3})\s+([\w.-]+)", line):
-                            self.entries.append(('comment', None, None, line_number, line))
-                        else:
-                            self._parse_disabled_line(stripped_line, line_number)
-                    else:
-                        self._parse_active_line(stripped_line, line_number)
+                chunks = list(self.chunkify(file, chunk_size))
+                with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
+                    futures = [executor.submit(self._process_chunk, chunk) for chunk in chunks]
+                    for future in concurrent.futures.as_completed(futures):
+                         future.result()
                 if not file.closed:
                    file.close()
         except (FileNotFoundError, PermissionError, IOError) as e:
-            sys.stderr.write(f"Failed to handle file {file_path} : {e}")
+            sys.stderr.write(f"Failed to handle file {self.file_path}: {e}")
+            if exitOnERR:
+                sys.exit()
+            if breakOnERR:
+                return
+        except Exception as e:
+            print(f"Error in processing file {self.file_path}: {e}")
             if exitOnERR:
                 sys.exit()
             if breakOnERR:
