@@ -159,6 +159,7 @@ class DNSCache:
 
         # Perform DNS lookup since it's a cache miss or expired
         try:
+            socket.setdefaulttimeout(timeout)
             with concurrent.futures.ThreadPoolExecutor() as executor:
                 ip_address = executor.submit(socket.gethostbyname, domain)
                 try:
@@ -443,7 +444,7 @@ class HostsParser:
                     __LOCAL = True
                     break
             if not __LOCAL:
-                resolved_ip = self.dns_cache.lookup(domain)
+                resolved_ip = self.dns_cache.lookup(domain, timeout)
                 return resolved_ip == ip_address
             else:
                 return __LOCAL
